@@ -1,0 +1,35 @@
+name: Deploy to PROD on SemVer tag
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'   
+
+jobs:
+  deploy-prod:
+    runs-on: ubuntu-latest
+    env:
+      EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
+      EC2_IPS:  ${{ secrets.EC2_IPS }}  
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare SSH key
+        run: |
+          install -m 600 -D /dev/null ~/.ssh/id_rsa
+          echo "${SSH_PRIVATE_KEY}" > ~/.ssh/id_rsa
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Deploy to all PROD EC2
+        shell: bash
+        run: |
+          IFS=',' read -ra IPS <<< "${EC2_IPS}"
+          for ip in "${IPS[@]}"; do
+            ip_trimmed="$(echo "$ip" | xargs)"
+            ssh-keyscan -H "$ip_trimmed" >> ~/.ssh/known_hosts
+            scp -i ~/.ssh/id_rsa ./frontend/index.html ${EC2_USER}@${ip_trimmed}:/tmp/index.html
+            ssh -i ~/.ssh/id_rsa ${EC2_USER}@${ip_trimmed} \
+              "sudo mv /tmp/index.html /var/www/html/index.html && sudo systemctl restart nginx"
+          done

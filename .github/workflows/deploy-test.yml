@@ -1,0 +1,33 @@
+name: Deploy to TEST on push
+
+on:
+  push:
+    branches: [ "main" ]
+ 
+
+jobs:
+  deploy-test:
+    runs-on: ubuntu-latest
+    env:
+      EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
+      EC2_TEST_IP: ${{ secrets.EC2_TEST_IP }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare SSH key
+        run: |
+          install -m 600 -D /dev/null ~/.ssh/id_rsa
+          echo "${SSH_PRIVATE_KEY}" > ~/.ssh/id_rsa
+          ssh-keyscan -H "$EC2_TEST_IP" >> ~/.ssh/known_hosts
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Copy index.html to TEST
+        run: |
+          scp -i ~/.ssh/id_rsa ./frontend/index.html ${EC2_USER}@${EC2_TEST_IP}:/tmp/index.html
+
+      - name: Move into Nginx root on TEST
+        run: |
+          ssh -i ~/.ssh/id_rsa ${EC2_USER}@${EC2_TEST_IP} \
+            "sudo mv /tmp/index.html /var/www/html/index.html && sudo systemctl restart nginx"
